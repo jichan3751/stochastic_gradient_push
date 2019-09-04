@@ -1,14 +1,14 @@
 #!/bin/bash
 
-if [ "$#" -ne 2 ]; then
+if [ "$#" -ne 3 ]; then
     echo "Provide two arg: rank world size"
     exit -1
 fi
 
 export SLURM_PROCID=$1
 export SLURM_NTASKS=$2
-
-export HOSTNAME="127.0.0.1"
+export HOSTNAME=$3
+# export HOSTNAME="127.0.0.1"
 
 mkdir -p './ckpt/'
 
