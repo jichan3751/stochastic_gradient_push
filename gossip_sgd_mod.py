@@ -34,9 +34,9 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
 
-from apex import amp
-from apex.parallel import DistributedDataParallel as ApexDDP
-from apex.fp16_utils import network_to_half, FP16_Optimizer
+# from apex import amp
+# from apex.parallel import DistributedDataParallel as ApexDDP
+# from apex.fp16_utils import network_to_half, FP16_Optimizer
 from torchvision.models.resnet import Bottleneck
 from torch.nn.parameter import Parameter
 
@@ -154,11 +154,11 @@ parser.add_argument('--network_interface_type', default='infiniband',
                     help='network interface type to be used for communication')
 parser.add_argument('--fp16', action='store_true',
                     help='whether to enable floating point 16 for speedup')
-parser.add_argument('--amp', action='store_true',
-                    help='whether to use apex amp for converting to fp16 '
-                    'instead of FP16Optimizer')
-parser.add_argument('--apex_ddp', action='store_true',
-                    help='whether to use DistributedDataParallel by Apex')
+# parser.add_argument('--amp', action='store_true',
+#                     help='whether to use apex amp for converting to fp16 '
+#                     'instead of FP16Optimizer')
+# parser.add_argument('--apex_ddp', action='store_true',
+#                     help='whether to use DistributedDataParallel by Apex')
 parser.add_argument('--num_itr_ignore', type=int, default=10,
                     help='number of iterations to ignore before timing. A '
                          'value of 0 would imply no iterations should be '
@@ -172,10 +172,11 @@ parser.add_argument('--no_cuda_streams', action='store_true',
 
 def main():
 
-    global amp_handle, args, state, log
+    # global amp_handle, args, state, log
+    global args, state, log
     args = parse_args()
-    if args.fp16 and args.amp:
-        amp_handle = amp.init()
+    # if args.fp16 and args.amp:
+    #     amp_handle = amp.init()
     print('parsed_args')
     print(args)
 
@@ -191,10 +192,11 @@ def main():
     # init model, loss, and optimizer
     model = init_model()
     if args.all_reduce:
-        if args.fp16 and args.apex_ddp:
-            model = ApexDDP(model)
-        else:
-            model = torch.nn.parallel.DistributedDataParallel(model)
+        # if args.fp16 and args.apex_ddp:
+        #     model = ApexDDP(model)
+        # else:
+        #     model = torch.nn.parallel.DistributedDataParallel(model)
+        model = torch.nn.parallel.DistributedDataParallel(model)
     else:
         model = GossipDataParallel(model,
                                    graph=args.graph,
@@ -219,9 +221,9 @@ def main():
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay,
                                 nesterov=args.nesterov)
-    if args.fp16 and not args.amp:
-        optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True,
-                                   verbose=False)
+    # if args.fp16 and not args.amp:
+    #     optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True,
+    #                                verbose=False)
     optimizer.zero_grad()
 
     # dictionary used to encode training state
@@ -387,8 +389,8 @@ def train(model, criterion, optimizer, batch_meter, data_meter, nn_meter,
 
     batch_time = time.time()
     for i, (batch, target) in enumerate(_train_loader, start=itr):
-        if args.fp16:
-            batch = batch.cuda(non_blocking=True).half()
+        # if args.fp16:
+        #     batch = batch.cuda(non_blocking=True).half()
 
         target = target.cuda(non_blocking=True)
         # create one-hot vector from target
@@ -405,14 +407,16 @@ def train(model, criterion, optimizer, batch_meter, data_meter, nn_meter,
         output = model(batch)
         loss = criterion(output, kl_target)
 
-        if args.fp16:
-            if args.amp:
-                with amp_handle.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                optimizer.backward(loss)
-        else:
-            loss.backward()
+        # if args.fp16:
+        #     if args.amp:
+        #         with amp_handle.scale_loss(loss, optimizer) as scaled_loss:
+        #             scaled_loss.backward()
+        #     else:
+        #         optimizer.backward(loss)
+        # else:
+        #     loss.backward()
+
+        loss.backward()
 
         if i % 100 == 0:
             update_learning_rate(optimizer, epoch, itr=i,
@@ -481,8 +485,8 @@ def validate(val_loader, model, criterion):
     with torch.no_grad():
         for i, (features, target) in enumerate(val_loader):
 
-            if args.fp16:
-                features = features.cuda(non_blocking=True).half()
+            # if args.fp16:
+            #     features = features.cuda(non_blocking=True).half()
                 # This is not needed but let it be since there is no harm
 
             target = target.cuda(non_blocking=True)
@@ -747,8 +751,8 @@ def parse_args():
     if args1.all_reduce:
         assert args1.graph_type == -1
 
-    if args1.fp16:
-        assert args1.backend == 'nccl'
+    # if args1.fp16:
+    #     assert args1.backend == 'nccl'
 
     if args1.backend == 'gloo':
         assert args1.network_interface_type == 'ethernet'
@@ -804,8 +808,8 @@ def init_model():
             m.bn3.weight = Parameter(torch.zeros(num_features))
     model.fc.weight.data.normal_(0, 0.01)
     model.cuda()
-    if args.fp16 and not args.amp:
-        model = network_to_half(model)
+    # if args.fp16 and not args.amp:
+    #     model = network_to_half(model)
     return model
 
 
