@@ -8,7 +8,7 @@ export HOSTNAME="127.0.0.1"
 mkdir -p './ckpt/'
 
 python -u gossip_sgd_mod.py \
-    --batch_size 256 --lr 0.1 --num_dataloader_workers 16 \
+    --batch_size 256 --lr 0.1 --num_dataloader_workers 4 \
     --num_epochs 1 --nesterov True --warmup True --push_sum False \
     --schedule 30 0.1 60 0.1 80 0.1 \
     --train_fast False --master_port 40100 \

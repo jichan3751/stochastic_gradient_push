@@ -572,7 +572,7 @@ def update_learning_rate(optimizer, epoch, itr=None, itr_per_epoch=None,
             param_group['lr'] = lr
 
 
-def make_dataloader(args, train=True):
+def make_dataloader_prev(args, train=True): #loads imagenet
     """ Returns train/val distributed dataloaders (cf. ImageNet in 1hr) """
 
     data_dir = args.dataset_dir
@@ -583,6 +583,10 @@ def make_dataloader(args, train=True):
                                      std=[0.229, 0.224, 0.225])
 
     if train:
+        # datasets.CIFAR10(root, train=True, transform=None, target_transform=None, download=False)
+
+
+
         log.debug('fpaths train {}'.format(train_dir))
         train_dataset = datasets.ImageFolder(
             train_dir, transforms.Compose([
@@ -613,6 +617,59 @@ def make_dataloader(args, train=True):
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 normalize])),
+            batch_size=args.batch_size, shuffle=False,
+            num_workers=args.num_dataloader_workers, pin_memory=True)
+
+        return val_loader
+
+
+
+def make_dataloader(args, train=True): # loads cifar10
+    """ Returns train/val distributed dataloaders (cf. ImageNet in 1hr) """
+
+    data_dir = args.dataset_dir
+    train_dir = os.path.join(data_dir, 'train')
+    val_dir = os.path.join(data_dir, 'val')
+
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+
+    if train:
+        log.debug('fpaths train {}'.format(train_dir))
+        transform1 = transforms.Compose([
+                transforms.RandomResizedCrop(224),
+                transforms.RandomHorizontalFlip(), transforms.ToTensor(),
+                normalize])
+
+        train_dataset = datasets.CIFAR10(train_dir, train=True, transform=transform1, target_transform=None, download=True)
+
+        # sampler produces indices used to assign each agent data samples
+        train_sampler = torch.utils.data.distributed.DistributedSampler(
+                            dataset=train_dataset,
+                            num_replicas=args.world_size,
+                            rank=args.rank)
+
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=args.batch_size,
+            shuffle=(train_sampler is None),
+            num_workers=args.num_dataloader_workers,
+            pin_memory=True, sampler=train_sampler)
+
+        return train_loader, train_sampler
+
+    else:
+        log.debug('fpaths val {}'.format(val_dir))
+
+        transform1=transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                normalize])
+
+        val_dataset = datasets.CIFAR10(train_dir, train=False, transform=transform1, target_transform=None, download=True)
+
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset,
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.num_dataloader_workers, pin_memory=True)
 
@@ -739,7 +796,8 @@ def init_model():
         Fully connected layer <-- Gaussian weights (mean=0, std=0.01)
         gamma of last Batch norm layer of each residual block <-- 0
     """
-    model = models.resnet50()
+    # model = models.resnet50()
+    model = models.resnet18()
     for m in model.modules():
         if isinstance(m, Bottleneck):
             num_features = m.bn3.num_features
