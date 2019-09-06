@@ -155,7 +155,9 @@ class Gossiper(object):
             msgs.append(msg)
         while len(msgs) > 0:
             msg = msgs.pop()
-            msg.data.set_()
+            # msg.data.set_() # due to change https://github.com/pytorch/pytorch/issues/23393
+            with torch.no_grad():
+                msg.set_()
 
     def parse_in_msg_buffer(self, residual=False):
         """ Parse in-msg buffer and return msg and ps-weight separately """

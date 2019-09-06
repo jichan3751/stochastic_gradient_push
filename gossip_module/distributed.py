@@ -499,6 +499,11 @@ class GossipDataParallel(Module):
                     gossip_ps_factor.copy_(ps_factor)
             except RuntimeError as e:
                 logger.warning('received runtime error {}'.format(e))
+
+                import traceback # HACK
+                ed = traceback.format_exc()
+                logger.warning('received runtime error_detail {}'.format(ed))
+
                 for gossiper in gossipers.values():
                     gossiper.clean_msg_buffers_()
                 gossip_ps_weight.fill_(-1)

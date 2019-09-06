@@ -177,8 +177,8 @@ def main():
     args = parse_args()
     # if args.fp16 and args.amp:
     #     amp_handle = amp.init()
-    print('parsed_args')
-    print(args)
+    # print('parsed_args')
+    # print(args)
 
     log = make_logger(args.rank, args.verbose)
     log.info('args: {}'.format(args))
@@ -306,6 +306,7 @@ def main():
     begin_time = time.time() - state['elapsed_time']
     best_val_prec1 = 0
     for epoch in range(start_epoch, args.num_epochs):
+        print('Starting Epoch {ep}'.format(ep=epoch))
 
         # deterministic seed used to load agent's subset of data
         sampler.set_epoch(epoch + args.seed * 90)
@@ -356,6 +357,10 @@ def main():
 
             cmanager.save_checkpoint(
                 epoch_id, requeue_on_signal=(epoch != args.num_epochs-1))
+            print('Finished Epoch {ep}, elapsed {tt:.3f}sec'.format(ep=epoch,tt=elapsed_time ))
+        else:
+            elapsed_time = time.time() - begin_time
+            print('Finished Epoch {ep}, elapsed {tt:.3f}sec'.format(ep=epoch,tt=elapsed_time ))
 
     if args.train_fast:
         val_loader = make_dataloader(args, train=False)
@@ -505,8 +510,10 @@ def validate(val_loader, model, criterion):
             top1.update(prec1.item(), features.size(0))
             top5.update(prec5.item(), features.size(0))
 
-        log.info(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
-                 .format(top1=top1, top5=top5))
+        # log.info(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
+        #          .format(top1=top1, top5=top5))
+        log.info(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Loss {losses.avg:.3f}'
+                 .format(top1=top1, top5=top5, losses = losses))
 
     return top1.avg
 
@@ -628,6 +635,8 @@ def make_dataloader_prev(args, train=True): #loads imagenet
 
 
 
+
+
 def make_dataloader(args, train=True): # loads cifar10
     """ Returns train/val distributed dataloaders (cf. ImageNet in 1hr) """
 
@@ -659,7 +668,7 @@ def make_dataloader(args, train=True): # loads cifar10
             num_workers=args.num_dataloader_workers,
             pin_memory=True, sampler=train_sampler)
 
-        return train_loader, train_sampler
+        ret = ( train_loader, train_sampler)
 
     else:
         log.debug('fpaths val {}'.format(val_dir))
@@ -677,7 +686,11 @@ def make_dataloader(args, train=True): # loads cifar10
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.num_dataloader_workers, pin_memory=True)
 
-        return val_loader
+        ret = (val_loader)
+
+    # print('Generated DataLoader')
+
+    return ret
 
 
 def parse_args():
