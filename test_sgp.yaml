@@ -3,9 +3,9 @@ cluster_name: sgd-pytorch
 
 # The maximum number of workers nodes to launch in addition to the head
 # node. This takes precedence over min_workers. min_workers default to 0.
-min_workers: 3
-initial_workers: 3
-max_workers: 3
+min_workers: 1
+initial_workers: 1
+max_workers: 1
 
 target_utilization_fraction: 0.9
 
@@ -47,9 +47,10 @@ worker_nodes:
     #         MarketType: spot
 
 setup_commands:
-    - ray || pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-0.8.0.dev4-cp36-cp36m-manylinux1_x86_64.whl
-    - conda install -y pytorch torchvision cudatoolkit=9.0 -c pytorch
-    - pip install -U ipdb ray[rllib]
+    - echo dd
+    # - ray || pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-0.8.0.dev4-cp36-cp36m-manylinux1_x86_64.whl
+    # - conda install -y pytorch torchvision cudatoolkit=9.0 -c pytorch
+    # - pip install -U ipdb ray[rllib]
 
 file_mounts: {
     ~/sgp_ray/: /home/chuchu/sgp_ray

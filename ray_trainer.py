@@ -181,12 +181,8 @@ def main():
     # print(args)
 
     log = make_logger(args.rank, args.verbose)
-
-    args_dict = vars(args)
     log.info('args: {}'.format(args))
     log.info(socket.gethostname())
-
-    print(args_dict)
 
     # seed for reproducibility
     torch.manual_seed(args.seed)
@@ -658,8 +654,7 @@ def make_dataloader(args, train=True): # loads cifar10
                 transforms.RandomHorizontalFlip(), transforms.ToTensor(),
                 normalize])
 
-        # train_dataset = datasets.CIFAR10(train_dir, train=True, transform=transform1, target_transform=None, download=True)
-        train_dataset = datasets.CIFAR10(val_dir, train=False, transform=transform1, target_transform=None, download=True)
+        train_dataset = datasets.CIFAR10(train_dir, train=True, transform=transform1, target_transform=None, download=True)
 
         # sampler produces indices used to assign each agent data samples
         train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -684,7 +679,7 @@ def make_dataloader(args, train=True): # loads cifar10
                 transforms.ToTensor(),
                 normalize])
 
-        val_dataset = datasets.CIFAR10(val_dir, train=False, transform=transform1, target_transform=None, download=True)
+        val_dataset = datasets.CIFAR10(train_dir, train=False, transform=transform1, target_transform=None, download=True)
 
         val_loader = torch.utils.data.DataLoader(
             val_dataset,
