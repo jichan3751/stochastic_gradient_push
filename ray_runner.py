@@ -47,7 +47,7 @@ from ray.experimental.sgd import utils
 import ray_sgp_utils as sgp_utils
 from ray_sgp_utils import update_state, GRAPH_TOPOLOGIES, MIXING_STRATEGIES
 
-logger = sgp_utils.make_logger2(verbose=False)
+logger = sgp_utils.make_logger2(verbose=False) # same as sgp code
 # logger.setLevel(logging.DEBUG)
 
 def main(config):
@@ -70,9 +70,11 @@ def main(config):
     address = "tcp://{ip}:{port}".format(ip=config['master_addr'], port=config['master_port'])
     sgp_runner.setup(address, config['rank'], config['world_size'])
 
-    sgp_runner.step()
+    stat1 = sgp_runner.step()
+    print(stat1)
 
-    sgp_runner.step()
+    stat1 = sgp_runner.step()
+    print(stat1)
 
     # train_stats = sgp_runner.step()
     # print(train_stats)
@@ -127,15 +129,31 @@ class SGPRunner(object):
             world_rank (int): the index of the runner.
             world_size (int): the total number of runners.
         """
-        print('_setup_distributed_pytorch')
+        # print('_setup_distributed_pytorch')
+
+        # checking current dir
+        # from subprocess import Popen, PIPE
+        # process = Popen(['ls', './'], stdout=PIPE, stderr=PIPE)
+        # stdout, stderr = process.communicate()
+        # print(stdout)
+
+        self._update_config( world_rank, world_size)
+
         self._setup_distributed_pytorch(url, world_rank, world_size)
-        print('_setup_gossip_related')
+        # print('_setup_gossip_related')
         self._setup_gossip_related()
-        print('_setup_training')
+        # print('_setup_training')
         self._setup_training()
-        print('_setup_misc')
+        # print('_setup_misc')
         self._setup_misc()
-        print('setup done')
+        # print('setup done')
+
+    def _update_config(self, world_rank, world_size):
+        self.config['rank'] = world_rank
+        self.config['world_size'] = world_size
+        self.config['out_fname'] = '/home/ubuntu/sgp_ray/stochastic_gradient_push/ckpt/{tag}out_r{rank}_n{wsize}.csv'.format(
+        tag = self.config['tag'], rank = self.config['rank'], wsize = self.config['world_size'])
+
 
     def _setup_distributed_pytorch(self, url, world_rank, world_size):
         # os.environ["CUDA_LAUNCH_BLOCKING"] = "1" # the distributed pytorch runner has this but don't know why
@@ -182,15 +200,15 @@ class SGPRunner(object):
         ## note: assume gpu available
 
         logger.debug("Creating model")
-        print('model')
+        # print('model')
         self.model = self.model_creator(self.config)
 
 
         if config['all_reduce']:
-            print('DistributedDataParallel')
+            # print('DistributedDataParallel')
             self.model = torch.nn.parallel.DistributedDataParallel(self.model)
         else:
-            print('GossipDataParallel')
+            # print('GossipDataParallel')
             self.model = GossipDataParallel(self.model,
                                        graph=self.graph,
                                        mixing=self.mixing,
@@ -204,7 +222,7 @@ class SGPRunner(object):
 
         logger.debug("Creating optimizer")
 
-        print('Optimizer')
+        # print('Optimizer')
         self.criterion, self.optimizer = self.optimizer_creator(
             self.model, self.config)
         # if torch.cuda.is_available():
@@ -212,7 +230,7 @@ class SGPRunner(object):
 
         logger.debug("Creating dataset")
 
-        print('DataSet')
+        # print('DataSet')
         self.training_set, self.validation_set = self.data_creator(self.config)
 
         # TODO: make num_workers configurable
@@ -326,6 +344,7 @@ class SGPRunner(object):
         config = self.config
         state = self.state
 
+
         # TODO: epoch setting?
 
         """Runs a training epoch and updates the model parameters."""
@@ -342,9 +361,17 @@ class SGPRunner(object):
         if not config['all_reduce']:
             self.model.block()
 
-        sgp_utils.train(self.config, self.model, self.criterion, self.optimizer,
+        losses_avg, top1_avg, top5_avg = sgp_utils.train(self.config, self.model, self.criterion, self.optimizer,
             self.batch_meter, self.data_meter, self.nn_meter,
             self.train_loader, self.epoch, self.start_itr, self.begin_time, self.config['num_itr_ignore'], logger)
+
+
+        train_stats = {
+            "epoch" : self.epoch,
+            "train_loss": losses_avg,
+            "train_top1": top1_avg,
+            "train_top5": top5_avg,
+            }
 
 
         start_itr = 0
@@ -363,7 +390,7 @@ class SGPRunner(object):
                 'nn_meter': self.nn_meter.__dict__
             })
             # evaluate on validation set and save checkpoint
-            prec1 = sgp_utils.validate(self.validation_loader, self.model, self.criterion, logger)
+            loss1, prec1, prec5 = sgp_utils.validate(self.validation_loader, self.model, self.criterion, logger)
             with open(config['out_fname'], '+a') as f:
                 print('{ep},{itr},{bt},{nt},{dt},'
                       '{filler},{filler},'
@@ -384,12 +411,16 @@ class SGPRunner(object):
             self.cmanager.save_checkpoint(
                 epoch_id, requeue_on_signal=(self.epoch != config['num_epochs']-1))
             print('Finished Epoch {ep}, elapsed {tt:.3f}sec'.format(ep=self.epoch,tt=elapsed_time ))
+
+
         else:
             elapsed_time = time.time() - self.begin_time
             print('Finished Epoch {ep}, elapsed {tt:.3f}sec'.format(ep=self.epoch,tt=elapsed_time ))
 
+
         self.epoch += 1
-        # return train_stats
+
+        return train_stats
 
 
 
@@ -428,26 +459,29 @@ class SGPRunner(object):
 #         self.optimizer.load_state_dict(state["optimizer"])
 #         self.epoch = state["stats"]["epoch"]
 
-#     def shutdown(self):
-#         """Attempts to shut down the worker."""
-#         del self.validation_loader
-#         del self.validation_set
-#         del self.train_loader
-#         del self.training_set
-#         del self.criterion
-#         del self.optimizer
-#         del self.model
-#         if torch.cuda.is_available():
-#             torch.cuda.empty_cache()
+    def shutdown(self):
+        """Attempts to shut down the worker."""
+        del self.validation_loader
+        del self.validation_set
+        del self.train_loader
+        del self.training_set
+        del self.criterion
+        del self.optimizer
+        del self.model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        dist.destroy_process_group()
 
 
-    # def get_node_ip(self):
-    #     """Returns the IP address of the current node."""
-    #     return ray.services.get_node_ip_address()
 
-    # def find_free_port(self):
-    #     """Finds a free port on the current node."""
-    #     return utils.find_free_port()
+    def get_node_ip(self):
+        """Returns the IP address of the current node."""
+        return ray.services.get_node_ip_address()
+
+    def find_free_port(self):
+        """Finds a free port on the current node."""
+        return utils.find_free_port()
 
 def get_config(RANK, WSIZE, MASTER_ADDR, TASK ):
 
@@ -459,7 +493,7 @@ def get_config(RANK, WSIZE, MASTER_ADDR, TASK ):
             'nesterov': True, 'push_sum': False, 'graph_type': -1, 'mixing_strategy': 0, 'overlap': False,
             'synch_freq': 0, 'warmup': True, 'seed': 1, 'resume': False, 'backend': 'nccl', 'tag': 'AR-SGD-ETH',
             'print_freq': 100, 'verbose': False, 'train_fast': False, 'checkpoint_all': True, 'overwrite_checkpoints': True,
-            'master_port': '40100', 'checkpoint_dir': './ckpt/', 'network_interface_type': 'ethernet',
+            'master_port': '40100', 'checkpoint_dir': '/home/ubuntu/sgp_ray/stochastic_gradient_push/ckpt', 'network_interface_type': 'ethernet',
             'fp16': False, 'num_itr_ignore': 10, 'dataset_dir': '/home/ubuntu/FF/datasets/cifar10',
             'no_cuda_streams': False, 'master_addr': '172.31.91.171', 'rank': 0, 'world_size': 2,
             'out_fname': './ckpt/AR-SGD-ETHout_r0_n2.csv', 'cpu_comm': False,
@@ -474,7 +508,7 @@ def get_config(RANK, WSIZE, MASTER_ADDR, TASK ):
             'nesterov': True, 'push_sum': False, 'graph_type': 1, 'mixing_strategy': 0, 'overlap': False, 'synch_freq': 0,
             'warmup': True, 'seed': 1, 'resume': False, 'backend': 'nccl', 'tag': 'DPSGD_ETH',
             'print_freq': 100, 'verbose': False, 'train_fast': False, 'checkpoint_all': True, 'overwrite_checkpoints': True,
-            'master_port': '40100', 'checkpoint_dir': './ckpt/', 'network_interface_type': 'ethernet',
+            'master_port': '40100', 'checkpoint_dir': '/home/ubuntu/sgp_ray/stochastic_gradient_push/ckpt', 'network_interface_type': 'ethernet',
             'fp16': False, 'num_itr_ignore': 10, 'dataset_dir': '/home/ubuntu/FF/datasets/cifar10',
             'no_cuda_streams': False, 'master_addr': '172.31.91.171', 'rank': 0, 'world_size': 2,
             'out_fname': './ckpt/DPSGD_ETHout_r0_n2.csv', 'cpu_comm': False,
@@ -490,7 +524,7 @@ def get_config(RANK, WSIZE, MASTER_ADDR, TASK ):
             'nesterov': True, 'push_sum': True, 'graph_type': 0, 'mixing_strategy': 0, 'overlap': False, 'synch_freq': 0,
             'warmup': True, 'seed': 1, 'resume': False, 'backend': 'nccl', 'tag': 'SGP_ETH',
             'print_freq': 100, 'verbose': False, 'train_fast': False, 'checkpoint_all': True, 'overwrite_checkpoints': True,
-            'master_port': '40100', 'checkpoint_dir': './ckpt/', 'network_interface_type': 'ethernet',
+            'master_port': '40100', 'checkpoint_dir': '/home/ubuntu/sgp_ray/stochastic_gradient_push/ckpt', 'network_interface_type': 'ethernet',
             'fp16': False, 'num_itr_ignore': 10, 'dataset_dir': '/home/ubuntu/FF/datasets/cifar10',
             'no_cuda_streams': False, 'master_addr': '172.31.91.171', 'rank': 0, 'world_size': 2,
             'out_fname': './ckpt/SGP_ETHout_r0_n2.csv', 'cpu_comm': False,
@@ -506,7 +540,7 @@ def get_config(RANK, WSIZE, MASTER_ADDR, TASK ):
     config['master_addr'] = MASTER_ADDR
     config['rank'] = RANK
     config['world_size'] = WSIZE
-    config['out_fname'] = './ckpt/{tag}out_r{rank}_n{wsize}.csv'.format(
+    config['out_fname'] = '/home/ubuntu/sgp_ray/stochastic_gradient_push/ckpt/{tag}out_r{rank}_n{wsize}.csv'.format(
         tag = config['tag'], rank = config['rank'], wsize = config['world_size'])
 
     print(config['tag'])

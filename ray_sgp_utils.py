@@ -281,6 +281,8 @@ def train(config, model, criterion, optimizer, batch_meter, data_meter, nn_meter
                       loss=losses, top1=top1,
                       top5=top5), file=f)
 
+    return losses.avg, top1.avg, top5.avg
+
 
 def validate(val_loader, model, criterion, log):
     """ Evaluate model using criterion on validation set """
@@ -320,10 +322,10 @@ def validate(val_loader, model, criterion, log):
         log.info(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Loss {losses.avg:.3f}'
                  .format(top1=top1, top5=top5, losses = losses))
 
-        print('pp * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Loss {losses.avg:.3f}'
-                 .format(top1=top1, top5=top5, losses = losses))
+        # print('pp * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Loss {losses.avg:.3f}'
+        #          .format(top1=top1, top5=top5, losses = losses))
 
-    return top1.avg
+    return losses.avg, top1.avg, top5.avg
 
 
 def accuracy(output, target, topk=(1,)):
