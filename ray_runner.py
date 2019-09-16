@@ -47,8 +47,8 @@ from ray.experimental.sgd import utils
 import ray_sgp_utils as sgp_utils
 from ray_sgp_utils import update_state, GRAPH_TOPOLOGIES, MIXING_STRATEGIES
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = sgp_utils.make_logger2(verbose=False)
+# logger.setLevel(logging.DEBUG)
 
 def main(config):
 
@@ -69,6 +69,8 @@ def main(config):
 
     address = "tcp://{ip}:{port}".format(ip=config['master_addr'], port=config['master_port'])
     sgp_runner.setup(address, config['rank'], config['world_size'])
+
+    sgp_runner.step()
 
     sgp_runner.step()
 
@@ -125,6 +127,7 @@ class SGPRunner(object):
             world_rank (int): the index of the runner.
             world_size (int): the total number of runners.
         """
+        print('_setup_distributed_pytorch')
         self._setup_distributed_pytorch(url, world_rank, world_size)
         print('_setup_gossip_related')
         self._setup_gossip_related()
@@ -132,9 +135,10 @@ class SGPRunner(object):
         self._setup_training()
         print('_setup_misc')
         self._setup_misc()
+        print('setup done')
 
     def _setup_distributed_pytorch(self, url, world_rank, world_size):
-        os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+        # os.environ["CUDA_LAUNCH_BLOCKING"] = "1" # the distributed pytorch runner has this but don't know why
         with self._timers["setup_proc"]:
             self.world_rank = world_rank
             logger.debug(
@@ -188,9 +192,9 @@ class SGPRunner(object):
         else:
             print('GossipDataParallel')
             self.model = GossipDataParallel(self.model,
-                                       graph=config['graph'],
-                                       mixing=config['mixing'],
-                                       comm_device=config['comm_device'],
+                                       graph=self.graph,
+                                       mixing=self.mixing,
+                                       comm_device=self.comm_device,
                                        push_sum=config['push_sum'],
                                        overlap=config['overlap'],
                                        synch_freq=config['synch_freq'],
@@ -203,8 +207,8 @@ class SGPRunner(object):
         print('Optimizer')
         self.criterion, self.optimizer = self.optimizer_creator(
             self.model, self.config)
-        if torch.cuda.is_available():
-            self.criterion = self.criterion.cuda() # problem?
+        # if torch.cuda.is_available():
+        #     self.criterion = self.criterion.cuda() # ptorch runner has this but does not work here
 
         logger.debug("Creating dataset")
 
@@ -228,13 +232,24 @@ class SGPRunner(object):
                 dataset = self.validation_set,
                 num_replicas=config['world_size'],
                 rank=config['rank'])
+
+        # pytorch runner ver
+        # self.validation_loader = torch.utils.data.DataLoader(
+        #     self.validation_set,
+        #     batch_size=config['batch_size'],
+        #     shuffle=(self.validation_sampler is None),
+        #     num_workers=config['num_dataloader_workers'],
+        #     pin_memory=True,
+        #     sampler=self.validation_sampler)
+
+        # sgp code ver
         self.validation_loader = torch.utils.data.DataLoader(
             self.validation_set,
             batch_size=config['batch_size'],
-            shuffle=(self.validation_sampler is None),
+            shuffle=False,
             num_workers=config['num_dataloader_workers'],
-            pin_memory=True,
-            sampler=self.validation_sampler)
+            pin_memory=True)
+
 
         self.optimizer.zero_grad()
 
@@ -253,15 +268,18 @@ class SGPRunner(object):
                 'data_meter': Meter(ptag='Data').__dict__,
                 'nn_meter': Meter(ptag='Forward/Backward').__dict__
         })
+        self.state = state
 
 
 
         # module used to relaunch jobs and handle external termination signals
+        ClusterManager.set_checkpoint_dir(config['checkpoint_dir'])
         self.cmanager = ClusterManager(rank=config['rank'],
                               world_size=config['world_size'],
                               model_tag=config['tag'],
                               state=state,
                               all_workers=config['checkpoint_all'])
+
 
         # enable low-level optimization of compute graph using cuDNN library?
         cudnn.benchmark = True
@@ -272,8 +290,8 @@ class SGPRunner(object):
 
 
         # initalize log file
-        if not os.path.exists(args.out_fname):
-            with open(args.out_fname, 'w') as f:
+        if not os.path.exists(config['out_fname']):
+            with open(config['out_fname'], 'w') as f:
                 print('BEGIN-TRAINING\n'
                       'World-Size,{ws}\n'
                       'Num-DLWorkers,{nw}\n'
@@ -282,9 +300,9 @@ class SGPRunner(object):
                       'NT(s),avg:NT(s),std:NT(s),'
                       'DT(s),avg:DT(s),std:DT(s),'
                       'Loss,avg:Loss,Prec@1,avg:Prec@1,Prec@5,avg:Prec@5,val'
-                      .format(ws=args.world_size,
-                              nw=args.num_dataloader_workers,
-                              bs=args.batch_size), file=f)
+                      .format(ws=config['world_size'],
+                              nw=config['num_dataloader_workers'],
+                              bs=config['batch_size']), file=f)
 
 
         self.start_itr = state['itr']
@@ -304,6 +322,10 @@ class SGPRunner(object):
 # neeed  optimizer.zero_grad()
 
     def step(self):
+
+        config = self.config
+        state = self.state
+
         # TODO: epoch setting?
 
         """Runs a training epoch and updates the model parameters."""
@@ -313,23 +335,23 @@ class SGPRunner(object):
 
         if not config['all_reduce']:
             # update the model's peers_per_itr attribute
-            sgp_utils.update_peers_per_itr(self.model, self.epoch)
+            sgp_utils.update_peers_per_itr(self.config, self.model, self.epoch)
 
 
         # start all agents' training loop at same time
         if not config['all_reduce']:
             self.model.block()
 
-        train(self.model, self.criterion, self.optimizer,
+        sgp_utils.train(self.config, self.model, self.criterion, self.optimizer,
             self.batch_meter, self.data_meter, self.nn_meter,
-            self.train_loader, self.epoch, self.start_itr, self.begin_time, self.config['num_itr_ignore'])
+            self.train_loader, self.epoch, self.start_itr, self.begin_time, self.config['num_itr_ignore'], logger)
 
 
         start_itr = 0
 
         if not config['train_fast']:
             # update state after each epoch
-            elapsed_time = time.time() - begin_time
+            elapsed_time = time.time() - self.begin_time
             update_state(state, {
                 'epoch': self.epoch + 1, 'itr': self.start_itr,
                 'is_best': False,
@@ -341,8 +363,8 @@ class SGPRunner(object):
                 'nn_meter': self.nn_meter.__dict__
             })
             # evaluate on validation set and save checkpoint
-            prec1 = validate(self.validation_loader, self.model, self.criterion)
-            with open(args.out_fname, '+a') as f:
+            prec1 = sgp_utils.validate(self.validation_loader, self.model, self.criterion, logger)
+            with open(config['out_fname'], '+a') as f:
                 print('{ep},{itr},{bt},{nt},{dt},'
                       '{filler},{filler},'
                       '{filler},{filler},'
@@ -353,17 +375,17 @@ class SGPRunner(object):
                               dt=self.data_meter, nt=self.nn_meter,
                               filler=-1, val=prec1), file=f)
 
-            if prec1 > best_val_prec1:
+            if prec1 > self.best_val_prec1:
                 update_state(state, {'is_best': True})
-                best_val_prec1 = prec1
+                self.best_val_prec1 = prec1
 
-            epoch_id = self.epoch if not args.overwrite_checkpoints else None
+            epoch_id = self.epoch if not config['overwrite_checkpoints'] else None
 
             self.cmanager.save_checkpoint(
-                epoch_id, requeue_on_signal=(epoch != config['num_epochs']-1))
+                epoch_id, requeue_on_signal=(self.epoch != config['num_epochs']-1))
             print('Finished Epoch {ep}, elapsed {tt:.3f}sec'.format(ep=self.epoch,tt=elapsed_time ))
         else:
-            elapsed_time = time.time() - begin_time
+            elapsed_time = time.time() - self.begin_time
             print('Finished Epoch {ep}, elapsed {tt:.3f}sec'.format(ep=self.epoch,tt=elapsed_time ))
 
         self.epoch += 1
@@ -451,7 +473,7 @@ def get_config(RANK, WSIZE, MASTER_ADDR, TASK ):
             'num_epochs': 2, 'num_iterations_per_training_epoch': None, 'momentum': 0.9, 'weight_decay': 0.0001,
             'nesterov': True, 'push_sum': False, 'graph_type': 1, 'mixing_strategy': 0, 'overlap': False, 'synch_freq': 0,
             'warmup': True, 'seed': 1, 'resume': False, 'backend': 'nccl', 'tag': 'DPSGD_ETH',
-            'print_freq': 100, 'verbose': False, 'train_fast': Fu zalse, 'checkpoint_all': True, 'overwrite_checkpoints': True,
+            'print_freq': 100, 'verbose': False, 'train_fast': False, 'checkpoint_all': True, 'overwrite_checkpoints': True,
             'master_port': '40100', 'checkpoint_dir': './ckpt/', 'network_interface_type': 'ethernet',
             'fp16': False, 'num_itr_ignore': 10, 'dataset_dir': '/home/ubuntu/FF/datasets/cifar10',
             'no_cuda_streams': False, 'master_addr': '172.31.91.171', 'rank': 0, 'world_size': 2,
@@ -486,6 +508,13 @@ def get_config(RANK, WSIZE, MASTER_ADDR, TASK ):
     config['world_size'] = WSIZE
     config['out_fname'] = './ckpt/{tag}out_r{rank}_n{wsize}.csv'.format(
         tag = config['tag'], rank = config['rank'], wsize = config['world_size'])
+
+    print(config['tag'])
+
+
+    ## overrides
+    # config['overlap'] = True
+
 
     return config
 

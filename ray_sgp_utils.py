@@ -21,6 +21,9 @@ import copy
 import os
 import socket
 import time
+import logging
+import sys
+
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -110,7 +113,7 @@ def get_data_creator(config): # loads cifar10
         normalize])
 
     # train_dataset = datasets.CIFAR10(train_dir, train=True, transform=transform1, target_transform=None, download=True)
-    val_dataset = datasets.CIFAR10(val_dir, train=False, transform=transform1, target_transform=None, download=True) # TODO
+    train_dataset = datasets.CIFAR10(val_dir, train=False, transform=transform1, target_transform=None, download=True) # TODO
 
     # # sampler produces indices used to assign each agent data samples
     # train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -172,8 +175,8 @@ def get_model_creator(config):
 
 
 
-def train(model, criterion, optimizer, batch_meter, data_meter, nn_meter,
-          loader, epoch, itr, begin_time, num_itr_ignore):
+def train(config, model, criterion, optimizer, batch_meter, data_meter, nn_meter,
+          loader, epoch, itr, begin_time, num_itr_ignore, log):
 
     losses = Meter(ptag='Loss')
     top1 = Meter(ptag='Prec@1')
@@ -226,11 +229,11 @@ def train(model, criterion, optimizer, batch_meter, data_meter, nn_meter,
         loss.backward()
 
         if i % 100 == 0:
-            update_learning_rate(optimizer, epoch, itr=i,
+            update_learning_rate(config, optimizer, epoch, log, itr=i,
                                  itr_per_epoch=len(loader))
         optimizer.step()  # optimization update
         optimizer.zero_grad()
-        if not args.overlap and not args.all_reduce:
+        if not config['overlap'] and not config['all_reduce']:
             log.debug('Transferring params')
             model.transfer_params()
         if num_itr_ignore == 0:
@@ -247,8 +250,8 @@ def train(model, criterion, optimizer, batch_meter, data_meter, nn_meter,
         losses.update(loss.item(), batch.size(0))
         top1.update(prec1.item(), batch.size(0))
         top5.update(prec5.item(), batch.size(0))
-        if i % args.print_freq == 0:
-            with open(args.out_fname, '+a') as f:
+        if i % config['print_freq'] == 0:
+            with open(config['out_fname'], '+a') as f:
                 print('{ep},{itr},{bt},{nt},{dt},'
                       '{loss.val:.4f},{loss.avg:.4f},'
                       '{top1.val:.3f},{top1.avg:.3f},'
@@ -263,11 +266,11 @@ def train(model, criterion, optimizer, batch_meter, data_meter, nn_meter,
         log_time = time.time() - log_time
         log.debug(log_time)
 
-        if (args.num_iterations_per_training_epoch != -1 and
-                i+1 == args.num_iterations_per_training_epoch):
+        if (config['num_iterations_per_training_epoch'] != -1 and
+                i+1 == config['num_iterations_per_training_epoch']):
             break
 
-    with open(args.out_fname, '+a') as f:
+    with open(config['out_fname'], '+a') as f:
         print('{ep},{itr},{bt},{nt},{dt},'
               '{loss.val:.4f},{loss.avg:.4f},'
               '{top1.val:.3f},{top1.avg:.3f},'
@@ -279,7 +282,7 @@ def train(model, criterion, optimizer, batch_meter, data_meter, nn_meter,
                       top5=top5), file=f)
 
 
-def validate(val_loader, model, criterion):
+def validate(val_loader, model, criterion, log):
     """ Evaluate model using criterion on validation set """
 
     losses = Meter(ptag='Loss')
@@ -317,6 +320,9 @@ def validate(val_loader, model, criterion):
         log.info(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Loss {losses.avg:.3f}'
                  .format(top1=top1, top5=top5, losses = losses))
 
+        print('pp * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Loss {losses.avg:.3f}'
+                 .format(top1=top1, top5=top5, losses = losses))
+
     return top1.avg
 
 
@@ -343,18 +349,18 @@ def update_state(state, update_dict):
         state[key] = copy.deepcopy(update_dict[key])
 
 
-def update_peers_per_itr(model, epoch):
+def update_peers_per_itr(config,model, epoch):
     """ Update the model's peers per itr according to specified schedule """
     ppi = None
     e_max = -1
-    for e in args.ppi_schedule:
+    for e in config['ppi_schedule']:
         if e_max <= e and epoch >= e:
             e_max = e
-            ppi = args.ppi_schedule[e]
+            ppi = config['ppi_schedule'][e]
     model.update_gossiper('peers_per_itr', ppi)
 
 
-def update_learning_rate(optimizer, epoch, itr=None, itr_per_epoch=None,
+def update_learning_rate(config, optimizer, epoch, log, itr=None, itr_per_epoch=None,
                          scale=1):
     """
     1) Linearly warmup to reference learning rate (5 epochs)
@@ -362,27 +368,52 @@ def update_learning_rate(optimizer, epoch, itr=None, itr_per_epoch=None,
     ** note: args.lr is the reference learning rate from which to scale up
     ** note: minimum global batch-size is 256
     """
-    target_lr = args.lr * args.batch_size * scale * args.world_size / 256
+    target_lr = config['lr'] * config['batch_size'] * scale * config['world_size'] / 256
 
     lr = None
-    if args.warmup and epoch < 5:  # warmup to scaled lr
-        if target_lr <= args.lr:
+    if config['warmup'] and epoch < 5:  # warmup to scaled lr
+        if target_lr <= config['lr']:
             lr = target_lr
         else:
             assert itr is not None and itr_per_epoch is not None
             count = epoch * itr_per_epoch + itr + 1
-            incr = (target_lr - args.lr) * (count / (5 * itr_per_epoch))
-            lr = args.lr + incr
+            incr = (target_lr - config['lr']) * (count / (5 * itr_per_epoch))
+            lr = config['lr'] + incr
     else:
         lr = target_lr
-        for e in args.lr_schedule:
+        for e in config['lr_schedule']:
             if epoch >= e:
-                lr *= args.lr_schedule[e]
+                lr *= config['lr_schedule'][e]
 
     if lr is not None:
         log.debug('Updating learning rate to {}'.format(lr))
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
+
+def make_logger2(verbose=True):
+    # same as experiemnt_utils.make_logger except it does not have rank info
+    """
+    Return a logger for writing to stdout; only one logger for each application
+    Arguments:
+        rank (int): rank of node making logger
+        verbose (bool): whether to set log-level to INFO; o.w. WARNING
+    Returns:
+        Python logger
+    """
+    logger = logging.getLogger(__name__)
+    if not getattr(logger, 'handler_set', None):
+        console = logging.StreamHandler(stream=sys.stdout)
+        format_str = '%(levelname)s -- %(threadName)s -- %(message)s'
+        console.setFormatter(logging.Formatter(format_str))
+        logger.addHandler(console)  # prints to console
+        logger.handler_set = True
+    if not getattr(logger, 'level_set', None):
+        if verbose:
+            logger.setLevel(logging.DEBUG)
+        else:
+            logger.setLevel(logging.INFO)
+        logger.level_set = True
+    return logger
 
 
