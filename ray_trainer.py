@@ -21,7 +21,7 @@ from ray_runner import SGPRunner, get_config
 
 logger = logging.getLogger(__name__)
 
-def main(config, num_replicas=1, use_gpu=1):
+def main(config, num_replicas=1, use_gpu=1, num_epochs=2):
 
     trainer1 = SGPTrainer(
         model_creator=sgp_utils.get_model_creator,
@@ -29,9 +29,10 @@ def main(config, num_replicas=1, use_gpu=1):
         optimizer_creator = sgp_utils.get_optimizer_creator,
         num_replicas=num_replicas,
         config = config)
-    trainer1.train()
 
-    trainer1.train()
+    for epoch in range(num_epochs):
+        print("Running Epoch {}".format(epoch))
+        trainer1.train()
 
     trainer1.shutdown()
     print("success!")
@@ -211,6 +212,12 @@ if __name__ == '__main__':
         default=1,
         help="sets the mode for training")
 
+    parser.add_argument(
+        "--num-epochs",
+        type=int,
+        default=2,
+        help="number of epochs for training")
+
     args, _ = parser.parse_known_args()
 
     import ray
@@ -219,6 +226,6 @@ if __name__ == '__main__':
 
     config = get_config(RANK=0, WSIZE=1, MASTER_ADDR='127.0.0.1', TASK = args.task )
 
-    main(config, args.num_replicas, args.use_gpu )
+    main(config, args.num_replicas, args.use_gpu, args.num_epochs )
 
 

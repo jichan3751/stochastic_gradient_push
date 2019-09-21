@@ -151,7 +151,7 @@ class SGPRunner(object):
     def _update_config(self, world_rank, world_size):
         self.config['rank'] = world_rank
         self.config['world_size'] = world_size
-        self.config['out_fname'] = '/home/ubuntu/sgp_ray/stochastic_gradient_push/ckpt/{tag}out_r{rank}_n{wsize}.csv'.format(
+        self.config['out_fname'] = '/home/ubuntu/stochastic_gradient_push/ckpt/{tag}out_r{rank}_n{wsize}.csv'.format(
         tag = self.config['tag'], rank = self.config['rank'], wsize = self.config['world_size'])
 
 
@@ -540,8 +540,11 @@ def get_config(RANK, WSIZE, MASTER_ADDR, TASK ):
     config['master_addr'] = MASTER_ADDR
     config['rank'] = RANK
     config['world_size'] = WSIZE
-    config['out_fname'] = '/home/ubuntu/sgp_ray/stochastic_gradient_push/ckpt/{tag}out_r{rank}_n{wsize}.csv'.format(
-        tag = config['tag'], rank = config['rank'], wsize = config['world_size'])
+    # config['out_fname'] = '/home/ubuntu/stochastic_gradient_push/ckpt/{tag}out_r{rank}_n{wsize}.csv'.format(
+    #     tag = config['tag'], rank = config['rank'], wsize = config['world_size'])
+
+    config['dataset_dir'] = '/data/datasets/imagenet12'
+    config['checkpoint_dir'] = '/home/ubuntu/stochastic_gradient_push/ckpt'
 
     print(config['tag'])
 

@@ -661,6 +661,12 @@ def make_dataloader(args, train=True): # loads cifar10
         # train_dataset = datasets.CIFAR10(train_dir, train=True, transform=transform1, target_transform=None, download=True)
         train_dataset = datasets.CIFAR10(val_dir, train=False, transform=transform1, target_transform=None, download=True)
 
+        # train_dataset = datasets.ImageFolder(
+        #     train_dir, transforms.Compose([
+        #         transforms.RandomResizedCrop(224),
+        #         transforms.RandomHorizontalFlip(), transforms.ToTensor(),
+        #         normalize]))
+
         # sampler produces indices used to assign each agent data samples
         train_sampler = torch.utils.data.distributed.DistributedSampler(
                             dataset=train_dataset,
@@ -685,6 +691,12 @@ def make_dataloader(args, train=True): # loads cifar10
                 normalize])
 
         val_dataset = datasets.CIFAR10(val_dir, train=False, transform=transform1, target_transform=None, download=True)
+
+        # val_dataset = datasets.ImageFolder(val_dir, transforms.Compose([
+        #         transforms.Resize(256),
+        #         transforms.CenterCrop(224),
+        #         transforms.ToTensor(),
+        #         normalize]))
 
         val_loader = torch.utils.data.DataLoader(
             val_dataset,
