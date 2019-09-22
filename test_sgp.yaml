@@ -28,8 +28,8 @@ auth:
 head_node:
     InstanceType: p3.16xlarge
     ImageId: ami-0d96d570269578cd7
-    InstanceMarketOptions:
-        MarketType: spot
+    # InstanceMarketOptions:
+    #     MarketType: spot
     BlockDeviceMappings:
       - DeviceName: "/dev/sdm"
         Ebs:
@@ -42,8 +42,8 @@ head_node:
 worker_nodes:
     InstanceType: p3.16xlarge
     ImageId: ami-0d96d570269578cd7
-    InstanceMarketOptions:
-        MarketType: spot
+    # InstanceMarketOptions:
+    #     MarketType: spot
     BlockDeviceMappings:
       - DeviceName: "/dev/sdm"
         Ebs:

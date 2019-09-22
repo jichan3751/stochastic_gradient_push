@@ -264,7 +264,8 @@ class GossipDataParallel(Module):
                                      self.broadcast_bucket_size)
         for tensors, module in zip(result[1:], self._module_copies[1:]):
             for tensor, param in zip(tensors, module.parameters()):
-                param.data.set_(tensor)
+                with torch.no_grad():
+                    param.set_(tensor)
 
         # intra-node buffer sync
         buffers = [b.data for b in self.module.buffers()]
@@ -273,7 +274,8 @@ class GossipDataParallel(Module):
                                          self.broadcast_bucket_size)
             for tensors, module in zip(result[1:], self._module_copies[1:]):
                 for tensor, buf in zip(tensors, module.buffers()):
-                    buf.data.set_(tensor)
+                    with torch.no_grad():
+                        buf.set_(tensor)
 
     def _sync_params_multiprocess(self):
         """ Synchronize parameters across devices (intra-node) """
@@ -551,7 +553,8 @@ class GossipDataParallel(Module):
                     for param in module.parameters():
                         if param.requires_grad:
                             param.grad = None
-                            param.data.set_()
+                            with torch.no_grad():
+                                param.set_()
 
             if self.nprocs_per_node > 1:
                 grads = []

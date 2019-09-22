@@ -28,6 +28,7 @@ def main(config, num_replicas=1, use_gpu=1, num_epochs=2):
         data_creator=sgp_utils.get_data_creator,
         optimizer_creator = sgp_utils.get_optimizer_creator,
         num_replicas=num_replicas,
+        use_gpu = use_gpu,
         config = config)
 
     for epoch in range(num_epochs):
@@ -102,8 +103,12 @@ class SGPTrainer(object):
             pass
         else:
             # Geneate actor class
+            num_cpus = int(use_gpu) # usually cpu >> gpu in machines
+
+            print('Runner with CPU {} and GPU {}'.format(num_cpus,int(use_gpu)))
+
             Runner = ray.remote(
-                num_cpus=1, num_gpus=int(use_gpu))(SGPRunner)
+                num_cpus=num_cpus, num_gpus=int(use_gpu))(SGPRunner)
             # Compute batch size per replica
             # batch_size_per_replica = batch_size // num_replicas
             # if batch_size % num_replicas > 0:

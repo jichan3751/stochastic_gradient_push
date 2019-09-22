@@ -550,7 +550,7 @@ def get_config(RANK, WSIZE, MASTER_ADDR, TASK ):
 
 
     ## overrides
-    # config['overlap'] = True
+    config['overlap'] = True
 
 
     return config
