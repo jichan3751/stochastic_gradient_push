@@ -26,7 +26,7 @@ if [ $TASK == 0 ]; then
         --graph_type -1 --all_reduce True --seed 1 \
         --network_interface_type 'ethernet' \
         --checkpoint_dir './ckpt/' \
-        --dataset_dir ~/FF/datasets/cifar10
+        --dataset_dir '/data/datasets/imagenet12'
 
 elif [ $TASK == 1 ]; then
     echo "DPSGD_ETH"
@@ -39,7 +39,7 @@ elif [ $TASK == 1 ]; then
         --all_reduce False --seed 1 \
         --network_interface_type 'ethernet' \
         --checkpoint_dir './ckpt/' \
-        --dataset_dir ~/FF/datasets/cifar10
+        --dataset_dir '/data/datasets/imagenet12'
 
 elif [ $TASK == 2 ]; then
     echo "SGP_ETH"
@@ -52,7 +52,7 @@ elif [ $TASK == 2 ]; then
         --all_reduce False --seed 1 \
         --network_interface_type 'ethernet' \
         --checkpoint_dir './ckpt/' \
-        --dataset_dir ~/FF/datasets/cifar10
+        --dataset_dir '/data/datasets/imagenet12'
 else
     echo "wrong task number"
 fi
